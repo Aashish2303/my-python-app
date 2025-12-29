@@ -95,7 +95,6 @@ class LoginRequest(BaseModel):
 class ProjectCreateRequest(BaseModel): 
     project_name: str
     location: str
-    manager_id: int
 # Schema for creating/updating a DWR
 class DWRItem(BaseModel):
     project_id: Optional[int] = None
@@ -203,7 +202,6 @@ def create_project(project: ProjectCreateRequest, db: Session = Depends(get_db))
     new_project = Project(
         project_name=project.project_name,
         location=project.location,
-        manager_id=project.manager_id,
         created_at=date.today()
     )
     db.add(new_project)
