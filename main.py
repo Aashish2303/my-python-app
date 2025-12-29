@@ -90,7 +90,11 @@ Base.metadata.create_all(bind=engine)
 class LoginRequest(BaseModel):
     phone_number: str
     password: str
-
+# Add this class near your other class definitions
+class ProjectCreate(BaseModel):
+    project_name: str
+    location: str
+    manager_id: int  # We will send the user ID as an integer
 # Schema for creating/updating a DWR
 class DWRItem(BaseModel):
     project_id: Optional[int] = None
@@ -304,6 +308,23 @@ def get_dwr(project_id: int, db: Session = Depends(get_db)):
             "date": str(row.entry_date)
         })
     return dwr_list
+# --- CREATE PROJECT ENDPOINT ---
+@app.post("/projects") 
+def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
+    # Create the new project object
+    new_project = Project(
+        project_name=project.project_name,
+        location=project.location,
+        manager_id=project.manager_id,
+        created_at=date.today() # Sets today's date automatically
+    )
+    
+    # Save to Database
+    db.add(new_project)
+    db.commit()
+    db.refresh(new_project)
+    
+    return new_project
 
 # --- UPDATE DWR ---
 @app.put("/update_dwr/{entry_id}")
