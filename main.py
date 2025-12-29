@@ -681,5 +681,31 @@ def approve_indent(approval: ApprovalUpdate, db: Session = Depends(get_db)):
     
     db.commit()
     return {"message": f"Approved vendor {chosen_quote.vendor_name} for {indent.item_name}"}
+# --- PASTE THIS INTO MAIN.PY ---
+
+# 1. This "Model" defines what data we expect from the App
+class ProjectCreate(BaseModel):
+    project_name: str
+    location: str
+    manager_id: int  # or str, depending on your database
+
+# 2. This function handles "SAVING" (The POST request)
+@app.post("/projects") 
+def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
+    # Create the new project in the database
+    # (Make sure 'Project' matches your actual database class name above)
+    new_project = Project(
+        name=project.project_name, 
+        location=project.location, 
+        manager_id=project.manager_id
+    )
+    db.add(new_project)
+    db.commit()
+    db.refresh(new_project)
+    
+    return {"message": "Project created successfully", "id": new_project.id}
+# -------------------------------
 if __name__ == "__main__":
+    import uvicorn
+    # The line below must be indented (press Tab once)
     uvicorn.run(app, host="0.0.0.0", port=8000)
