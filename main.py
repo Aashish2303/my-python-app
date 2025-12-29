@@ -8,20 +8,43 @@ from datetime import date
 from typing import Optional, List
 
 # ==========================================
-# 1. DATABASE CONFIGURATION
-# ==========================================
-# ⚠️ REPLACE 'admin123' with your actual database password
-SQLALCHEMY_DATABASE_URL = "postgresql://neondb_owner:npg_0Q1KcgYNevSL@ep-bitter-mode-a1oorpzw-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+import os  # Make sure this is imported at the top if not already there
 
-# Create the database connection engine
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# ===============================================
+import os  # <--- MAKE SURE YOU ADD THIS AT THE VERY TOP OF THE FILE
 
-# Create a session factory
+# ... keep your other imports (FastAPI, sqlalchemy, etc.) ...
+
+# ===============================================
+# 1. DATABASE CONFIGURATION (Updated for Render)
+# ===============================================
+
+# Get the Database URL from Render. If it's empty, use your local file.
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sitetrack.db")
+
+# Fix the URL format (Render uses 'postgres://' but Python needs 'postgresql://')
+if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Create the Engine
+if "sqlite" in SQLALCHEMY_DATABASE_URL:
+    # Settings for SQLite (Local Laptop)
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+else:
+    # Settings for PostgreSQL (Render Cloud)
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for our database models
 Base = declarative_base()
 
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 # ==========================================
 # 2. DATABASE MODELS (The Tables)
 # ==========================================
