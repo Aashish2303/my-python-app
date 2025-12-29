@@ -91,10 +91,11 @@ class LoginRequest(BaseModel):
     phone_number: str
     password: str
 # Add this class near your other class definitions
-class ProjectCreate(BaseModel):
+# CHANGE THE NAME HERE
+class ProjectCreateRequest(BaseModel): 
     project_name: str
     location: str
-    manager_id: int  # We will send the user ID as an integer
+    manager_id: int
 # Schema for creating/updating a DWR
 class DWRItem(BaseModel):
     project_id: Optional[int] = None
@@ -196,20 +197,19 @@ class ProjectCreate(BaseModel):
     location: str
 
 # 2. Create the API Endpoint
-@app.post("/create_project")
-def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
-    # Create the new project variable
+# UPDATE THE TYPE HERE
+@app.post("/projects") 
+def create_project(project: ProjectCreateRequest, db: Session = Depends(get_db)):
     new_project = Project(
         project_name=project.project_name,
-        location=project.location
+        location=project.location,
+        manager_id=project.manager_id,
+        created_at=date.today()
     )
-    
-    # Save it to the Cloud Database
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
-    
-    return {"message": "Project created successfully!", "project_id": new_project.project_id}
+    return new_project
 
 # --- END OF NEW PROJECT CODE ---
 # --- END OF NEW CODE ---
