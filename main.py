@@ -181,7 +181,30 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     
     return {"message": "User created successfully!", "user_id": new_user.id}
+# --- START OF NEW PROJECT CODE ---
 
+# 1. Define what data we need to create a project
+class ProjectCreate(BaseModel):
+    project_name: str
+    location: str
+
+# 2. Create the API Endpoint
+@app.post("/create_project")
+def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
+    # Create the new project variable
+    new_project = Project(
+        project_name=project.project_name,
+        location=project.location
+    )
+    
+    # Save it to the Cloud Database
+    db.add(new_project)
+    db.commit()
+    db.refresh(new_project)
+    
+    return {"message": "Project created successfully!", "project_id": new_project.project_id}
+
+# --- END OF NEW PROJECT CODE ---
 # --- END OF NEW CODE ---
 # --- GET PROJECTS ---
 # Note: Providing both /projects and /get_projects to ensure compatibility
