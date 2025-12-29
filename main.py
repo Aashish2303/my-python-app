@@ -197,16 +197,19 @@ class ProjectCreate(BaseModel):
 
 # 2. Create the API Endpoint
 # UPDATE THE TYPE HERE
+# FIXED CODE
 @app.post("/projects") 
 def create_project(project: ProjectCreateRequest, db: Session = Depends(get_db)):
     new_project = Project(
         project_name=project.project_name,
-        location=project.location,
-        created_at=date.today()
+        location=project.location
+        # created_at is REMOVED
     )
+    
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
+    
     return new_project
 
 # --- END OF NEW PROJECT CODE ---
