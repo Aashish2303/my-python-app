@@ -152,7 +152,37 @@ def login(user_req: LoginRequest, db: Session = Depends(get_db)):
         "role": user_by_phone.role,  # <--- IMPORTANT: Sending Role to Flutter
         "token": "fake_token_123"
     }
+# --- PASTE THIS NEW CODE ---
 
+class UserCreate(BaseModel):
+    name: str
+    phone_number: str
+    password: str
+    role: str = "admin"
+
+@app.post("/signup")
+def signup(user: UserCreate, db: Session = Depends(get_db)):
+    # 1. Check if phone number already exists
+    existing_user = db.query(User).filter(User.phone_number == user.phone_number).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Phone number already registered")
+    
+    # 2. Create the new user
+    new_user = User(
+        name=user.name,
+        phone_number=user.phone_number,
+        password=user.password,  
+        role=user.role
+    )
+    
+    # 3. Save to Database
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return {"message": "User created successfully!", "user_id": new_user.id}
+
+# --- END OF NEW CODE ---
 # --- GET PROJECTS ---
 # Note: Providing both /projects and /get_projects to ensure compatibility
 @app.get("/projects")
