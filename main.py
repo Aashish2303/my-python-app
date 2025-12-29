@@ -1,11 +1,14 @@
-import uvicorn
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Date
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Float, Date
+from sqlalchemy.orm import sessionmaker, Session, declarative_base, relationship
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import date
-from typing import Optional, List
+from typing import Optional, List  # <--- Added this to fix the error
+import os
+import shutil
+import uuid
 
 # ==========================================
 import os  # Make sure this is imported at the top if not already there
@@ -524,5 +527,137 @@ def add_dpr(item: DPRItem, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    # ==========================================
+# FEATURE 2: MATERIAL INDENT SYSTEM
+# ==========================================
+
+# --- 1. Database Model ---
+class MaterialIndent(Base):
+    __tablename__ = "material_indents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, index=True) # Links to the Project
+    item_name = Column(String)               # e.g., "Cement"
+    quantity = Column(String)                # e.g., "50 bags"
+    priority = Column(String)                # "High", "Medium", "Low"
+    status = Column(String, default="Pending") # Pending -> Quoted -> Approved
+    requested_by = Column(String)            # Name of Site Engineer
+    date = Column(String)                    # e.g., "2023-10-27"
+
+# --- 2. Pydantic Schema (What the App sends) ---
+class IndentCreate(BaseModel):
+    project_id: int
+    item_name: str
+    quantity: str
+    priority: str = "Medium"
+    requested_by: str
+    date: str
+
+# --- 3. API Endpoints ---
+
+# A. Create a Request (For Site Engineers)
+@app.post("/create_indent")
+def create_material_indent(indent: IndentCreate, db: Session = Depends(get_db)):
+    new_indent = MaterialIndent(
+        project_id=indent.project_id,
+        item_name=indent.item_name,
+        quantity=indent.quantity,
+        priority=indent.priority,
+        requested_by=indent.requested_by,
+        date=indent.date,
+        status="Pending"
+    )
+    db.add(new_indent)
+    db.commit()
+    db.refresh(new_indent)
+    return {"message": "Indent raised successfully", "id": new_indent.id}
+
+# B. Get All Indents for a Project (For Sales Team/MD)
+@app.get("/get_indents/{project_id}")
+def get_indents(project_id: int, db: Session = Depends(get_db)):
+    indents = db.query(MaterialIndent).filter(MaterialIndent.project_id == project_id).all()
+    if not indents:
+        return [] # Return empty list if no requests
+    return indents
+# =======================================================
+# FEATURE 2 COMPLETE: MATERIAL INDENT, QUOTES & APPROVAL
+# =======================================================
+
+# --- 1. Database Models ---
+
+# (Make sure you have the MaterialIndent model from the previous step here.
+# If you didn't paste it yet, paste it now. If you did, just add these new ones below it.)
+
+class MaterialQuotation(Base):
+    __tablename__ = "material_quotations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    indent_id = Column(Integer, index=True)  # Links to the Indent Request
+    vendor_name = Column(String)
+    price = Column(Float)
+    is_approved = Column(Boolean, default=False)
+
+# --- 2. Pydantic Schemas (Input Data) ---
+
+class QuotationCreate(BaseModel):
+    indent_id: int
+    vendor_name: str
+    price: float
+
+class ApprovalUpdate(BaseModel):
+    indent_id: int
+    selected_quotation_id: int
+
+# --- 3. API Endpoints ---
+
+# A. Sales Team: Upload a Quote for a specific Indent
+@app.post("/add_quotation")
+def add_quotation(quote: QuotationCreate, db: Session = Depends(get_db)):
+    # 1. Check if Indent exists
+    indent = db.query(MaterialIndent).filter(MaterialIndent.id == quote.indent_id).first()
+    if not indent:
+        raise HTTPException(status_code=404, detail="Indent ID not found")
+    
+    # 2. Add the Quote
+    new_quote = MaterialQuotation(
+        indent_id=quote.indent_id,
+        vendor_name=quote.vendor_name,
+        price=quote.price
+    )
+    
+    # 3. Update Indent status to "Quoted"
+    indent.status = "Quoted"
+    
+    db.add(new_quote)
+    db.commit()
+    return {"message": "Quotation added successfully"}
+
+# B. Sales Team: See all quotes for a specific Indent
+@app.get("/get_quotes/{indent_id}")
+def get_quotes(indent_id: int, db: Session = Depends(get_db)):
+    quotes = db.query(MaterialQuotation).filter(MaterialQuotation.indent_id == indent_id).all()
+    return quotes
+
+# C. MD: Approve a Quote
+@app.post("/approve_indent")
+def approve_indent(approval: ApprovalUpdate, db: Session = Depends(get_db)):
+    # 1. Get the Indent
+    indent = db.query(MaterialIndent).filter(MaterialIndent.id == approval.indent_id).first()
+    if not indent:
+        raise HTTPException(status_code=404, detail="Indent not found")
+
+    # 2. Get the specific Quote the MD chose
+    chosen_quote = db.query(MaterialQuotation).filter(MaterialQuotation.id == approval.selected_quotation_id).first()
+    if not chosen_quote:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    # 3. Mark Quote as Approved
+    chosen_quote.is_approved = True
+    
+    # 4. Mark Indent as Final Approved
+    indent.status = "Approved"
+    
+    db.commit()
+    return {"message": f"Approved vendor {chosen_quote.vendor_name} for {indent.item_name}"}
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
