@@ -5,7 +5,6 @@ from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import date
 from typing import List, Optional
 
 # ==========================================
@@ -91,11 +90,17 @@ class MaterialQuotation(Base):
     price = Column(Float)
     is_approved = Column(Boolean, default=False)
 
-# Create all tables
+# ==========================================
+# 3. SCHEMA CREATION (CRITICAL STEP)
+# ==========================================
+# WARNING: If your DB is broken, UNCOMMENT the line below to delete all tables and start fresh.
+# Base.metadata.drop_all(bind=engine) 
+
+# This creates tables if they don't exist
 Base.metadata.create_all(bind=engine)
 
 # ==========================================
-# 3. SCHEMAS (Data formatting)
+# 4. SCHEMAS (Pydantic Models)
 # ==========================================
 
 # Auth
@@ -158,7 +163,7 @@ class ApprovalUpdate(BaseModel):
     selected_quotation_id: int
 
 # ==========================================
-# 4. APP SETUP
+# 5. APP SETUP
 # ==========================================
 
 app = FastAPI()
@@ -179,7 +184,7 @@ def get_db():
         db.close()
 
 # ==========================================
-# 5. ROUTES
+# 6. ROUTES
 # ==========================================
 
 @app.get("/")
@@ -256,6 +261,11 @@ def update_project(project_id: int, project: ProjectCreate, db: Session = Depend
 
 @app.post("/daily-reports")
 def create_report(report: ReportSchema, db: Session = Depends(get_db)):
+    # Verify project exists first
+    project = db.query(Project).filter(Project.id == report.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Project ID {report.project_id} not found")
+
     new_report = DailyReport(**report.dict())
     db.add(new_report)
     db.commit()
@@ -270,6 +280,11 @@ def get_daily_reports(project_id: int, db: Session = Depends(get_db)):
 
 @app.post("/worker-reports")
 def create_worker_report(report: WorkerSchema, db: Session = Depends(get_db)):
+    # Verify project exists first
+    project = db.query(Project).filter(Project.id == report.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Project ID {report.project_id} not found")
+
     new_report = WorkerReport(**report.dict())
     db.add(new_report)
     db.commit()
