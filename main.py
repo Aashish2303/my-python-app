@@ -211,7 +211,12 @@ def create_project(project: ProjectCreateRequest, db: Session = Depends(get_db))
     db.refresh(new_project)
     
     return new_project
-
+# --- PASTE THIS IN MAIN.PY (handling the GET request) ---
+@app.get("/projects")
+def read_projects(db: Session = Depends(get_db)):
+    # This fetches all projects from the database and sends them to Flutter
+    return db.query(Project).all()
+# -------------------------------------------------------
 # --- END OF NEW PROJECT CODE ---
 # --- END OF NEW CODE ---
 # --- GET PROJECTS ---
@@ -684,28 +689,22 @@ def approve_indent(approval: ApprovalUpdate, db: Session = Depends(get_db)):
 # --- PASTE THIS INTO MAIN.PY ---
 
 # 1. This "Model" defines what data we expect from the App
+# ... imports and other code ...
+
+# CORRECT FastAPI code for saving projects
 class ProjectCreate(BaseModel):
     project_name: str
     location: str
-    manager_id: int  # or str, depending on your database
+    manager_id: int
 
-# 2. This function handles "SAVING" (The POST request)
-@app.post("/projects") 
+@app.post("/projects")
 def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
-    # Create the new project in the database
-    # (Make sure 'Project' matches your actual database class name above)
-    new_project = Project(
-        name=project.project_name, 
-        location=project.location, 
-        manager_id=project.manager_id
-    )
+    new_project = Project(name=project.project_name, location=project.location, manager_id=project.manager_id)
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
-    
-    return {"message": "Project created successfully", "id": new_project.id}
-# -------------------------------
+    return new_project
+
 if __name__ == "__main__":
     import uvicorn
-    # The line below must be indented (press Tab once)
     uvicorn.run(app, host="0.0.0.0", port=8000)
