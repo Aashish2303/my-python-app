@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Float, Boolean, text
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Float, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,7 +40,7 @@ class Project(Base):
 class DailyReport(Base):
     __tablename__ = "daily_reports"
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"))
+    project_id = Column(Integer, ForeignKey("projects.id")) # This links to Project.id
     engineer = Column(String)
     location = Column(String)
     unit = Column(String)
@@ -83,23 +83,14 @@ class MaterialQuotation(Base):
     is_approved = Column(Boolean, default=False)
 
 # ==========================================
-# 3. FORCE DATABASE RESET (RAW SQL)
+# 3. FIX THE DATABASE (WIPE & RECREATE)
 # ==========================================
-# This block MANUALLY deletes the tables to fix the "UndefinedColumn" error.
-try:
-    with engine.connect() as connection:
-        connection.execute(text("DROP TABLE IF EXISTS daily_reports CASCADE"))
-        connection.execute(text("DROP TABLE IF EXISTS worker_reports CASCADE"))
-        connection.execute(text("DROP TABLE IF EXISTS material_quotations CASCADE"))
-        connection.execute(text("DROP TABLE IF EXISTS material_indents CASCADE"))
-        connection.execute(text("DROP TABLE IF EXISTS projects CASCADE"))
-        connection.execute(text("DROP TABLE IF EXISTS users CASCADE"))
-        connection.commit()
-    print("--- TABLES DROPPED SUCCESSFULLY ---")
-except Exception as e:
-    print(f"--- ERROR DROPPING TABLES: {e} ---")
 
-# Now create them fresh
+# I HAVE ENABLED THIS LINE FOR YOU. 
+# THIS WILL DELETE THE BROKEN TABLES SO THE APP CAN START.
+Base.metadata.drop_all(bind=engine) 
+
+# Create the correct tables
 Base.metadata.create_all(bind=engine)
 
 # ==========================================
@@ -188,8 +179,7 @@ def home():
 def signup(user: UserCreate, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.phone_number == user.phone_number).first()
     if existing_user:
-        # If user exists, just return success to avoid error during testing
-        return {"message": "User already exists", "user_id": existing_user.id}
+        raise HTTPException(status_code=400, detail="Phone number already registered")
     
     new_user = User(
         name=user.name, 
