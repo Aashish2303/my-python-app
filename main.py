@@ -225,14 +225,22 @@ def login(user_req: LoginRequest, db: Session = Depends(get_db)):
 def get_projects(db: Session = Depends(get_db)):
     return db.query(Project).all()
 
+# ==========================================
+# REPLACE THE OLD create_project FUNCTION WITH THIS
+# ==========================================
+from typing import Dict, Any # Add this at the top if missing
+
 @app.post("/projects")
-def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
-    new_project = Project(name=project.name, location=project.location)
+def create_project(project: Dict[str, Any], db: Session = Depends(get_db)):
+    # This logic checks for ANY common name variable
+    p_name = project.get("name") or project.get("projectName") or project.get("title") or "Untitled Project"
+    p_loc = project.get("location") or project.get("place") or ""
+
+    new_project = Project(name=str(p_name), location=str(p_loc))
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
     return new_project
-
 @app.delete("/projects/{project_id}")
 def delete_project(project_id: int, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
