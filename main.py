@@ -3,14 +3,18 @@ from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Float, Boolean
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, relationship
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import date
 from typing import List, Optional
 
-# ==========================
-# 1. DATABASE SETUP
-# ==========================
+# ==========================================
+# 1. DATABASE CONFIGURATION
+# ==========================================
+# Get the Database URL from Render. If empty, use local sqlite.
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sitetrack.db")
+
+# Fix Render's URL format (postgres -> postgresql)
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -18,9 +22,11 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ==========================
-# 2. MODELS (The Tables)
-# ==========================
+# ==========================================
+# 2. DATABASE MODELS (The Tables)
+# ==========================================
+
+# --- A. User (For Login/Signup) ---
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -29,12 +35,14 @@ class User(Base):
     password = Column(String)
     role = Column(String)
 
+# --- B. Project ---
 class Project(Base):
     __tablename__ = "projects"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     location = Column(String)
 
+# --- C. Daily Report (Work Progress) ---
 class DailyReport(Base):
     __tablename__ = "daily_reports"
     id = Column(Integer, primary_key=True, index=True)
@@ -49,6 +57,7 @@ class DailyReport(Base):
     delay_reason = Column(String)
     date = Column(String)
 
+# --- D. Worker Report (Labor) ---
 class WorkerReport(Base):
     __tablename__ = "worker_reports"
     id = Column(Integer, primary_key=True, index=True)
@@ -61,6 +70,7 @@ class WorkerReport(Base):
     description = Column(String)
     date = Column(String)
 
+# --- E. Material Indents (Requests) ---
 class MaterialIndent(Base):
     __tablename__ = "material_indents"
     id = Column(Integer, primary_key=True, index=True)
@@ -68,10 +78,11 @@ class MaterialIndent(Base):
     item_name = Column(String)              
     quantity = Column(String)               
     priority = Column(String)               
-    status = Column(String, default="Pending")
+    status = Column(String, default="Pending") # Pending -> Quoted -> Approved
     requested_by = Column(String)           
     date = Column(String)                   
 
+# --- F. Material Quotations (Vendor Prices) ---
 class MaterialQuotation(Base):
     __tablename__ = "material_quotations"
     id = Column(Integer, primary_key=True, index=True)
@@ -80,12 +91,14 @@ class MaterialQuotation(Base):
     price = Column(Float)
     is_approved = Column(Boolean, default=False)
 
-# Create tables if they don't exist
+# Create all tables
 Base.metadata.create_all(bind=engine)
 
-# ==========================
-# 3. Pydantic SCHEMAS
-# ==========================
+# ==========================================
+# 3. SCHEMAS (Data formatting)
+# ==========================================
+
+# Auth
 class LoginRequest(BaseModel):
     phone_number: str
     password: str
@@ -96,10 +109,12 @@ class UserCreate(BaseModel):
     password: str
     role: str = "admin"
 
+# Projects
 class ProjectCreate(BaseModel):
     name: str
     location: str
 
+# Daily Report
 class ReportSchema(BaseModel):
     project_id: int
     engineer: str
@@ -112,6 +127,7 @@ class ReportSchema(BaseModel):
     delay_reason: str
     date: str
 
+# Worker Report
 class WorkerSchema(BaseModel):
     project_id: int
     engineer: str
@@ -122,6 +138,7 @@ class WorkerSchema(BaseModel):
     description: str
     date: str
 
+# Material Indent
 class IndentCreate(BaseModel):
     project_id: int
     item_name: str
@@ -130,6 +147,7 @@ class IndentCreate(BaseModel):
     requested_by: str
     date: str
 
+# Material Quotation
 class QuotationCreate(BaseModel):
     indent_id: int
     vendor_name: str
@@ -139,9 +157,10 @@ class ApprovalUpdate(BaseModel):
     indent_id: int
     selected_quotation_id: int
 
-# ==========================
-# 4. API ENDPOINTS
-# ==========================
+# ==========================================
+# 4. APP SETUP
+# ==========================================
+
 app = FastAPI()
 
 app.add_middleware(
@@ -159,15 +178,21 @@ def get_db():
     finally:
         db.close()
 
+# ==========================================
+# 5. ROUTES
+# ==========================================
+
 @app.get("/")
 def home():
-    return {"message": "SiteTrack Server is Running Normally"}
+    return {"message": "SiteTrack Server is Live!"}
+
+# --- AUTH ROUTES ---
 
 @app.post("/signup")
 def signup(user: UserCreate, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.phone_number == user.phone_number).first()
     if existing_user:
-        return {"message": "User already exists", "user_id": existing_user.id}
+        raise HTTPException(status_code=400, detail="Phone number already registered")
     
     new_user = User(
         name=user.name, 
@@ -194,6 +219,8 @@ def login(user_req: LoginRequest, db: Session = Depends(get_db)):
         "token": "fake_token_123"
     }
 
+# --- PROJECT ROUTES ---
+
 @app.get("/projects")
 def get_projects(db: Session = Depends(get_db)):
     return db.query(Project).all()
@@ -215,6 +242,18 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"detail": "Project deleted"}
 
+@app.put("/projects/{project_id}")
+def update_project(project_id: int, project: ProjectCreate, db: Session = Depends(get_db)):
+    db_project = db.query(Project).filter(Project.id == project_id).first()
+    if not db_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    db_project.name = project.name
+    db_project.location = project.location
+    db.commit()
+    return db_project
+
+# --- DAILY REPORT ROUTES ---
+
 @app.post("/daily-reports")
 def create_report(report: ReportSchema, db: Session = Depends(get_db)):
     new_report = DailyReport(**report.dict())
@@ -227,6 +266,8 @@ def create_report(report: ReportSchema, db: Session = Depends(get_db)):
 def get_daily_reports(project_id: int, db: Session = Depends(get_db)):
     return db.query(DailyReport).filter(DailyReport.project_id == project_id).all()
 
+# --- WORKER REPORT ROUTES ---
+
 @app.post("/worker-reports")
 def create_worker_report(report: WorkerSchema, db: Session = Depends(get_db)):
     new_report = WorkerReport(**report.dict())
@@ -238,6 +279,8 @@ def create_worker_report(report: WorkerSchema, db: Session = Depends(get_db)):
 @app.get("/worker-reports/{project_id}")
 def get_worker_reports(project_id: int, db: Session = Depends(get_db)):
     return db.query(WorkerReport).filter(WorkerReport.project_id == project_id).all()
+
+# --- MATERIAL INDENT ROUTES ---
 
 @app.post("/create_indent")
 def create_material_indent(indent: IndentCreate, db: Session = Depends(get_db)):
@@ -259,20 +302,28 @@ def create_material_indent(indent: IndentCreate, db: Session = Depends(get_db)):
 def get_indents(project_id: int, db: Session = Depends(get_db)):
     return db.query(MaterialIndent).filter(MaterialIndent.project_id == project_id).all()
 
+# --- QUOTATION & APPROVAL ROUTES ---
+
 @app.post("/add_quotation")
 def add_quotation(quote: QuotationCreate, db: Session = Depends(get_db)):
+    # 1. Check Indent
     indent = db.query(MaterialIndent).filter(MaterialIndent.id == quote.indent_id).first()
-    if indent:
-        new_quote = MaterialQuotation(
-            indent_id=quote.indent_id,
-            vendor_name=quote.vendor_name,
-            price=quote.price
-        )
-        indent.status = "Quoted"
-        db.add(new_quote)
-        db.commit()
-        return {"message": "Quotation added"}
-    raise HTTPException(status_code=404, detail="Indent not found")
+    if not indent:
+        raise HTTPException(status_code=404, detail="Indent ID not found")
+    
+    # 2. Add Quote
+    new_quote = MaterialQuotation(
+        indent_id=quote.indent_id,
+        vendor_name=quote.vendor_name,
+        price=quote.price
+    )
+    
+    # 3. Update Status
+    indent.status = "Quoted"
+    
+    db.add(new_quote)
+    db.commit()
+    return {"message": "Quotation added successfully"}
 
 @app.get("/get_quotes/{indent_id}")
 def get_quotes(indent_id: int, db: Session = Depends(get_db)):
@@ -280,12 +331,19 @@ def get_quotes(indent_id: int, db: Session = Depends(get_db)):
 
 @app.post("/approve_indent")
 def approve_indent(approval: ApprovalUpdate, db: Session = Depends(get_db)):
+    # 1. Get Indent
     indent = db.query(MaterialIndent).filter(MaterialIndent.id == approval.indent_id).first()
+    if not indent:
+        raise HTTPException(status_code=404, detail="Indent not found")
+
+    # 2. Get Quote
     chosen_quote = db.query(MaterialQuotation).filter(MaterialQuotation.id == approval.selected_quotation_id).first()
+    if not chosen_quote:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    # 3. Mark Approved
+    chosen_quote.is_approved = True
+    indent.status = "Approved"
     
-    if indent and chosen_quote:
-        chosen_quote.is_approved = True
-        indent.status = "Approved"
-        db.commit()
-        return {"message": "Indent Approved"}
-    raise HTTPException(status_code=404, detail="Indent or Quote not found")
+    db.commit()
+    return {"message": f"Approved vendor {chosen_quote.vendor_name} for {indent.item_name}"}
